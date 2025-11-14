@@ -8,7 +8,7 @@ local player = Players.LocalPlayer
 local function log(...) print("[StatusTabsClient]", ...) end
 local function warnlog(...) warn("[StatusTabsClient]", ...) end
 
--- безопасный require
+-- Р±РµР·РѕРїР°СЃРЅС‹Р№ require
 local ok, StatusTabsUI = pcall(function()
 	return require(ReplicatedStorage:WaitForChild("StatusTabsUI", 10))
 end)
@@ -19,26 +19,28 @@ else
 	log("StatusTabsUI loaded")
 end
 
--- иконки уровней крови
+-- РёРєРѕРЅРєРё СѓСЂРѕРІРЅРµР№ РєСЂРѕРІРё
 local ICON_BLOOD_MID   = "rbxassetid://126009312869682"
 local ICON_BLOOD_HEAVY = "rbxassetid://130010949003740"
-local ICON_BLEEDING    = "rbxassetid://76205278425713"  -- < ЯВНО ДЛЯ BLEEDING
+local ICON_BLEEDING    = "rbxassetid://76205278425713"  -- < РЇР’РќРћ Р”Р›РЇ BLEEDING
 
--- описания
-local DESC_STUN      = "You are stunned."
-local DESC_COLLAPSE  = "You are incapacitated."
-local DESC_BLEEDING  = "You are bleeding."
+local DEFAULT_TIMER_TEXT = "--:--"
 
-local BLOOD_DESCS = {
-	lt75 = "Light Blood Loss | Damage ?10%, Run speed ?5%, Jump ?10%, Dashes: unaffected, Max stamina ?10%, Stamina regen ?15%, Slight coordination loss, Mild vision dimming.",
-	lt50 = "Moderate Blood Loss | Damage ?20%, Run speed ?10%, Jump ?20%, Dashes: limited, Max stamina ?25%, Stamina regen ?35%, Coordination impaired, Vision blur.",
-	lt25 = "Severe Blood Loss | Damage ?30%, Run speed ?18%, Jump ?30%, Dashes: heavily limited, Max stamina ?40%, Stamina regen ?55%, Coordination unstable, Vision tunneling.",
-	lt7  = "Critical Blood Loss | Damage ?40%, Run speed ?25%, Jump ?40%, Dashes: blocked, Max stamina ?50%, Stamina regen ?70%, Coordination failure, Vision impairment.",
+local BLOOD_BUCKETS = {
+        lt75 = { name = "Light Blood Loss", iconId = ICON_BLOOD_MID },
+        lt50 = { name = "Moderate Blood Loss", iconId = ICON_BLOOD_MID },
+        lt25 = { name = "Severe Blood Loss", iconId = ICON_BLOOD_HEAVY },
+        lt7  = { name = "Critical Blood Loss", iconId = ICON_BLOOD_HEAVY },
 }
 
-local function show(key, name, desc, iconId)
-	log("Show", key, name)
-	StatusTabsUI.Show(player, key, { name = name, description = desc, iconId = iconId })
+local BLOOD_TAB_KEY = "BloodLoss"
+
+local function show(key, name, iconId, extra)
+        log("Show", key, name)
+        local data = extra or {}
+        data.name = name
+        data.iconId = iconId
+        StatusTabsUI.Show(player, key, data)
 end
 local function hide(key)
 	log("Hide", key)
@@ -46,115 +48,122 @@ local function hide(key)
 end
 
 local function bindCharacter(char)
-	if not char then warnlog("bindCharacter(nil)"); return end
-	log("bindCharacter:", char:GetFullName())
+        if not char then warnlog("bindCharacter(nil)"); return end
+        log("bindCharacter:", char:GetFullName())
 
-	-- COLLAPSED
-	local function updateCollapsed()
-		local on = char:GetAttribute("IsCollapsed")
-		log("IsCollapsed changed ->", on)
-		if on then show("Collapsed", "Collapsed", DESC_COLLAPSE) else hide("Collapsed") end
-	end
-	char:GetAttributeChangedSignal("IsCollapsed"):Connect(updateCollapsed)
-	updateCollapsed()
+        -- COLLAPSED
+        local function refreshCollapsed()
+                local on = char:GetAttribute("IsCollapsed")
+                log("IsCollapsed changed ->", on)
+                if on then
+                        show("Collapsed", "Collapsed", nil, {
+                                expiresAt = char:GetAttribute("IsCollapsedUntil"),
+                                timerText = DEFAULT_TIMER_TEXT,
+                        })
+                else
+                        hide("Collapsed")
+                end
+        end
+        char:GetAttributeChangedSignal("IsCollapsed"):Connect(refreshCollapsed)
+        char:GetAttributeChangedSignal("IsCollapsedUntil"):Connect(function()
+                if char:GetAttribute("IsCollapsed") then
+                        refreshCollapsed()
+                end
+        end)
+        refreshCollapsed()
 
-	-- STUN
-	local function updateStun()
-		local on = char:GetAttribute("IsStunned")
-		log("IsStunned changed ->", on)
-		if on then show("Stun", "Stun", DESC_STUN) else hide("Stun") end
-	end
-	char:GetAttributeChangedSignal("IsStunned"):Connect(updateStun)
-	updateStun()
+        -- STUN
+        local function refreshStun()
+                local on = char:GetAttribute("IsStunned")
+                log("IsStunned changed ->", on)
+                if on then
+                        show("Stun", "Stun", nil, {
+                                expiresAt = char:GetAttribute("StunUntil"),
+                                timerText = DEFAULT_TIMER_TEXT,
+                        })
+                else
+                        hide("Stun")
+                end
+        end
+        char:GetAttributeChangedSignal("IsStunned"):Connect(refreshStun)
+        char:GetAttributeChangedSignal("StunUntil"):Connect(function()
+                if char:GetAttribute("IsStunned") then
+                        refreshStun()
+                end
+        end)
+        refreshStun()
 
-	-- BLEEDING
-	local function updateBleed()
-		local on = char:GetAttribute("IsBleeding")
-		log("IsBleeding changed ->", on)
-		if on then StatusTabsUI.Show(player, "Bleeding", {
-			name = "Bleeding",
-			description = "",
-			iconId = ICON_BLEEDING,      -- < вот это важно
-			})
-		else hide("Bleeding") end
-	end
-	char:GetAttributeChangedSignal("IsBleeding"):Connect(updateBleed)
-	updateBleed()
+        -- BLEEDING
+        local function refreshBleed()
+                local on = char:GetAttribute("IsBleeding")
+                log("IsBleeding changed ->", on)
+                if on then
+                        show("Bleeding", "Bleeding", ICON_BLEEDING, {
+                                expiresAt = char:GetAttribute("BleedUntil"),
+                                timerText = DEFAULT_TIMER_TEXT,
+                        })
+                else
+                        hide("Bleeding")
+                end
+        end
+        char:GetAttributeChangedSignal("IsBleeding"):Connect(refreshBleed)
+        char:GetAttributeChangedSignal("BleedUntil"):Connect(function()
+                if char:GetAttribute("IsBleeding") then
+                        refreshBleed()
+                end
+        end)
+        refreshBleed()
 
-	-- === BLOOD THRESHOLDS (stable bucket, no flicker) ===
-	local lastBloodBucket = nil  -- "lt75" | "lt50" | "lt25" | "lt7" | "none"
+        -- === BLOOD THRESHOLDS ===
+        local lastBloodBucket = nil  -- "lt75" | "lt50" | "lt25" | "lt7" | "none"
 
-	local function bloodToBucket(b)
-		if b < 7 then return "lt7"
-		elseif b < 25 then return "lt25"
-		elseif b < 50 then return "lt50"
-		elseif b < 75 then return "lt75"
-		else return "none" end
-	end
+        local function bloodToBucket(b)
+                if b < 7 then return "lt7"
+                elseif b < 25 then return "lt25"
+                elseif b < 50 then return "lt50"
+                elseif b < 75 then return "lt75"
+                else return "none" end
+        end
 
-	local function hideAllBloodTabs()
-		StatusTabsUI.Hide("Blood_lt75")
-		StatusTabsUI.Hide("Blood_lt50")
-		StatusTabsUI.Hide("Blood_lt25")
-		StatusTabsUI.Hide("Blood_lt7")
-	end
+        local function updateBloodLevel()
+                local raw = char:GetAttribute("Blood")
+                if raw == nil then return end
+                local blood = tonumber(raw)
+                if not blood then return end
 
-	local function showBucket(bucket)
-		if bucket == "lt7" then
-			StatusTabsUI.Show(player, "Blood_lt7", {
-				name = "Critical Blood Loss",
-				description = "" .. BLOOD_DESCS.lt7,  -- если хочешь — можно "" чтобы было только имя
-				iconId = ICON_BLOOD_HEAVY
-			})
-		elseif bucket == "lt25" then
-			StatusTabsUI.Show(player, "Blood_lt25", {
-				name = "Severe Blood Loss",
-				description = "" .. BLOOD_DESCS.lt25,
-				iconId = ICON_BLOOD_HEAVY
-			})
-		elseif bucket == "lt50" then
-			StatusTabsUI.Show(player, "Blood_lt50", {
-				name = "Moderate Blood Loss",
-				description = "" .. BLOOD_DESCS.lt50,
-				iconId = ICON_BLOOD_MID
-			})
-		elseif bucket == "lt75" then
-			StatusTabsUI.Show(player, "Blood_lt75", {
-				name = "Light Blood Loss",
-				description = "" .. BLOOD_DESCS.lt75,
-				iconId = ICON_BLOOD_MID
-			})
-		end
-	end
+                local bucket = bloodToBucket(blood)
+                if bucket == lastBloodBucket then
+                        return
+                end
 
-	local function updateBloodLevel()
-		local blood = tonumber(char:GetAttribute("Blood")) or 100
-		local bucket = bloodToBucket(blood)
-		if bucket == lastBloodBucket then
-			-- Ничего не меняем > никаких дерганий
-			return
-		end
+                lastBloodBucket = bucket
+                if bucket == "none" then
+                        hide(BLOOD_TAB_KEY)
+                        return
+                end
 
-		-- Сменился уровень — спрячем прошлый и покажем текущий
-		hideAllBloodTabs()
-		if bucket ~= "none" then
-			showBucket(bucket)
-		end
-		lastBloodBucket = bucket
-	end
+                local bucketConfig = BLOOD_BUCKETS[bucket]
+                if not bucketConfig then
+                        warnlog("Unknown blood bucket:", bucket)
+                        return
+                end
 
-	char:GetAttributeChangedSignal("Blood"):Connect(updateBloodLevel)
-	-- первичный расчёт
-	updateBloodLevel()
+                show(BLOOD_TAB_KEY, bucketConfig.name, bucketConfig.iconId, {
+                        timerText = DEFAULT_TIMER_TEXT,
+                })
+        end
+
+        char:GetAttributeChangedSignal("Blood"):Connect(updateBloodLevel)
+        updateBloodLevel()
 
 end
 -- hook character
 player.CharacterAdded:Connect(bindCharacter)
 if player.Character then bindCharacter(player.Character) end
 
--- дополнительный safeguard: если GUI не появился через 2с — явно дернём Show на тест
-task.delay(2, function()
-	log("SAFETY PING: forcing test show/hide to verify GUI path")
-	show("TestPing", "Ping", "If you see this tab, GUI path works.")
-	task.delay(1.0, function() hide("TestPing") end)
-end)
+-- РґРѕРїРѕР»РЅРёС‚РµР»СЊРЅС‹Р№ safeguard: РµСЃР»Рё GUI РЅРµ РїРѕСЏРІРёР»СЃСЏ С‡РµСЂРµР· 2СЃ вЂ” СЏРІРЅРѕ РґРµСЂРЅС‘Рј Show РЅР° С‚РµСЃС‚
+task.delay(2, function()вђЉ
+        log("SAFETY PING: forcing test show/hide to verify GUI path")
+        show("TestPing", "Ping", nil, { timerText = DEFAULT_TIMER_TEXT })
+        task.delay(1.0, function() hide("TestPing") end)
+end
